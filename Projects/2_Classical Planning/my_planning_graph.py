@@ -19,9 +19,18 @@ class ActionLayer(BaseActionLayer):
         --------
         layers.ActionNode
         """
-        # TODO: implement this function
-        raise NotImplementedError
+        
+        # Generate sets of negated effects for each actionA
+        effectsA_negated = set(map(lambda effect: ~effect, self.children[actionA]))
 
+        # Generate sets of negated effects for each actionB
+        effectsB_negated = set(map(lambda effect: ~effect, self.children[actionB]))
+       
+        has_inconsistent_effects = (
+            not effectsA_negated.isdisjoint(self.children[actionB]) or  # Check if B has any effect negated by A
+            not effectsB_negated.isdisjoint(self.children[actionA])    # Check if A has any effect negated by B
+        )
+        return has_inconsistent_effects
 
     def _interference(self, actionA, actionB):
         """ Return True if the effects of either action negate the preconditions of the other 
@@ -34,8 +43,19 @@ class ActionLayer(BaseActionLayer):
         --------
         layers.ActionNode
         """
-        # TODO: implement this function
-        raise NotImplementedError
+            
+        # Generate sets of negated effects for each actionA
+        effectsA_negated = set(map(lambda effect: ~effect, self.children[actionA]))
+
+        # Generate sets of negated effects for each actionB
+        effectsB_negated = set(map(lambda effect: ~effect, self.children[actionB]))
+        
+        has_interference = (
+            not effectsA_negated.isdisjoint(self.parents[actionB]) or  
+            not effectsB_negated.isdisjoint(self.parents[actionA])    
+        )
+        return has_interference
+        
 
     def _competing_needs(self, actionA, actionB):
         """ Return True if any preconditions of the two actions are pairwise mutex in the parent layer
@@ -49,8 +69,12 @@ class ActionLayer(BaseActionLayer):
         layers.ActionNode
         layers.BaseLayer.parent_layer
         """
-        # TODO: implement this function
-        raise NotImplementedError
+        parent_layer = self.parent_layer
+        for precondA in self.parents[actionA]:
+            for precondB in self.parents[actionB]:
+                if self.parent_layer.is_mutex(precondA,precondB):
+                    return True
+        return False
 
 
 class LiteralLayer(BaseLiteralLayer):
@@ -66,13 +90,19 @@ class LiteralLayer(BaseLiteralLayer):
         --------
         layers.BaseLayer.parent_layer
         """
-        # TODO: implement this function
-        raise NotImplementedError
+
+        if not self.parents[literalA] or not self.parents[literalB]:
+            return False
+        for a in self.parents[literalA]:
+            for b in self.parents[literalB]:
+                if not self.parent_layer.is_mutex(a, b):
+                    return False
+        
+        return  True
 
     def _negation(self, literalA, literalB):
         """ Return True if two literals are negations of each other """
-        # TODO: implement this function
-        raise NotImplementedError
+        return literalA == ~literalB
 
 
 class PlanningGraph:
@@ -109,7 +139,8 @@ class PlanningGraph:
         layer.update_mutexes()
         self.literal_layers = [layer]
         self.action_layers = []
-
+    
+        
     def h_levelsum(self):
         """ Calculate the level sum heuristic for the planning graph
 
@@ -135,8 +166,24 @@ class PlanningGraph:
         --------
         Russell-Norvig 10.3.1 (3rd Edition)
         """
-        # TODO: implement this function
-        raise NotImplementedError
+        levelsum = 0
+        layer_index = 0
+        goal_copy = set(self.goal)
+        
+        while not self._is_leveled:
+            discard_goal = []
+            for goal in goal_copy:
+                if goal in self.literal_layers[layer_index]:
+                    levelsum += layer_index
+                    discard_goal.append(goal)
+            for g in discard_goal:
+                goal_copy.discard(g)
+            if not goal_copy:
+                return levelsum
+            self._extend()
+            layer_index +=1
+        
+        return levelsum
 
     def h_maxlevel(self):
         """ Calculate the max level heuristic for the planning graph
@@ -165,8 +212,25 @@ class PlanningGraph:
         -----
         WARNING: you should expect long runtimes using this heuristic with A*
         """
-        # TODO: implement maxlevel heuristic
-        raise NotImplementedError
+        maxlevel = 0
+        layer_index = 0
+        goal_copy = set(self.goal)
+        
+        while not self._is_leveled:
+            discard_goal = []
+            for goal in goal_copy:
+                if goal in self.literal_layers[layer_index]:
+                    if layer_index > maxlevel:
+                        maxlevel = layer_index
+                    discard_goal.append(goal)
+            for g in discard_goal:
+                goal_copy.discard(g)
+            if not goal_copy:
+                return maxlevel
+            self._extend()
+            layer_index +=1
+        
+        return maxlevel
 
     def h_setlevel(self):
         """ Calculate the set level heuristic for the planning graph
@@ -180,7 +244,7 @@ class PlanningGraph:
           (1) See the pseudocode folder for help on a simple implementation
           (2) You can implement this function more efficiently if you expand
               the graph one level at a time until you find the set level rather
-              than filling the whole graph at the start.
+              than  ing the whole graph at the start.
 
         See Also
         --------
@@ -190,8 +254,27 @@ class PlanningGraph:
         -----
         WARNING: you should expect long runtimes using this heuristic on complex problems
         """
-        # TODO: implement setlevel heuristic
-        raise NotImplementedError
+
+        layer_index = 0
+        
+        while not self._is_leveled:
+            all_goals = True
+            for g in self.goal:
+                if g not in self.literal_layers[layer_index]:
+                    all_goals = False
+                    break
+                
+            if all_goals:
+                if layer_index == 0:
+                    return layer_index
+                prev_mutex =  lambda a,b: self.literal_layers[layer_index].is_mutex(a,b)
+                goal_match = True
+                if all([ not prev_mutex(a,b) for a in self.goal for b in self.goal]):
+                    return layer_index                   
+            self._extend()
+            layer_index +=1
+        
+        return layer_index
 
     ##############################################################################
     #                     DO NOT MODIFY CODE BELOW THIS LINE                     #
